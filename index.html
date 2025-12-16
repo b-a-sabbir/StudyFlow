@@ -1,0 +1,788 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
+    <title>StudyFlow Tracker</title>
+    
+    <!-- PWA Settings -->
+    <meta name="theme-color" content="#ffffff" />
+    <meta name="apple-mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+
+    <!-- Tailwind CSS -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    
+    <!-- Chart.js for Analytics -->
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+
+    <script>
+      tailwind.config = {
+        darkMode: 'class',
+        theme: {
+          extend: {
+            fontFamily: {
+              sans: ['Inter', 'system-ui', 'sans-serif'],
+            },
+            padding: {
+              'safe': 'env(safe-area-inset-bottom)',
+            }
+          },
+        },
+      }
+    </script>
+    <style>
+      body {
+        font-family: 'Inter', sans-serif;
+        background-color: #f8fafc; /* slate-50 */
+        overscroll-behavior-y: none;
+        -webkit-tap-highlight-color: transparent;
+      }
+      .dark body { background-color: #0f172a; } /* slate-900 */
+      
+      /* Scrollbar Hiding */
+      .no-scrollbar::-webkit-scrollbar { display: none; }
+      .no-scrollbar { -ms-overflow-style: none; scrollbar-width: none; }
+
+      /* Animation Utilities */
+      .fade-in { animation: fadeIn 0.3s ease-out; }
+      .slide-in { animation: slideIn 0.3s ease-out; }
+      @keyframes fadeIn { from { opacity: 0; } to { opacity: 1; } }
+      @keyframes slideIn { from { transform: translateX(20px); opacity: 0; } to { transform: translateX(0); opacity: 1; } }
+    </style>
+<script type="importmap">
+{
+  "imports": {
+    "react": "https://esm.sh/react@^19.2.3",
+    "react/": "https://esm.sh/react@^19.2.3/",
+    "recharts": "https://esm.sh/recharts@^3.6.0"
+  }
+}
+</script>
+<link rel="stylesheet" href="/index.css">
+</head>
+<body class="transition-colors duration-300 text-slate-800 dark:text-slate-100 dark:bg-slate-900">
+    
+    <div id="app" class="flex flex-row max-w-[1920px] mx-auto min-h-screen">
+        <!-- App content injected by JS -->
+    </div>
+
+    <!-- Modals -->
+    <div id="modal-overlay" class="fixed inset-0 bg-black/40 backdrop-blur-sm z-50 hidden flex items-center justify-center px-4 fade-in">
+        <div class="bg-white dark:bg-slate-800 w-full max-w-sm rounded-2xl shadow-2xl p-6 relative z-10" onclick="event.stopPropagation()">
+            <h2 class="text-xl font-bold mb-4 text-slate-800 dark:text-white">New Task</h2>
+            <form id="add-task-form">
+                <div class="space-y-4">
+                    <div>
+                        <label class="block text-sm font-medium text-slate-600 dark:text-slate-400 mb-1">Task Name</label>
+                        <input type="text" id="new-task-name" placeholder="e.g. Linear Algebra" class="w-full px-4 py-3 rounded-lg bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 focus:ring-2 focus:ring-indigo-500 outline-none text-slate-900 dark:text-white transition-all">
+                    </div>
+                    <div>
+                        <label class="block text-sm font-medium text-slate-600 dark:text-slate-400 mb-1">Category</label>
+                        <div id="new-task-categories" class="grid grid-cols-3 gap-2">
+                            <!-- Categories injected here -->
+                        </div>
+                    </div>
+                </div>
+                <div class="flex gap-3 mt-8">
+                    <button type="button" onclick="window.app.closeModal()" class="flex-1 px-4 py-3 rounded-xl font-semibold text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-700 transition-colors">Cancel</button>
+                    <button type="submit" class="flex-1 px-4 py-3 rounded-xl font-semibold bg-indigo-600 text-white hover:bg-indigo-700 shadow-lg shadow-indigo-200 dark:shadow-none transition-all">Create Task</button>
+                </div>
+            </form>
+        </div>
+    </div>
+
+<script>
+/**
+ * ICONS (SVG Strings)
+ */
+const Icons = {
+    Home: `<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"></path><polyline points="9 22 9 12 15 12 15 22"></polyline></svg>`,
+    BarChart: `<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="20" x2="18" y2="10"></line><line x1="12" y1="20" x2="12" y2="4"></line><line x1="6" y1="20" x2="6" y2="14"></line></svg>`,
+    Plus: `<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="12" y1="5" x2="12" y2="19"></line><line x1="5" y1="12" x2="19" y2="12"></line></svg>`,
+    Play: `<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="5 3 19 12 5 21 5 3"></polygon></svg>`,
+    Pause: `<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="6" y="4" width="4" height="16"></rect><rect x="14" y="4" width="4" height="16"></rect></svg>`,
+    ArrowLeft: `<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="19" y1="12" x2="5" y2="12"></line><polyline points="12 19 5 12 12 5"></polyline></svg>`,
+    Moon: `<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"></path></svg>`,
+    Sun: `<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="5"></circle><line x1="12" y1="1" x2="12" y2="3"></line><line x1="12" y1="21" x2="12" y2="23"></line><line x1="4.22" y1="4.22" x2="5.64" y2="5.64"></line><line x1="18.36" y1="18.36" x2="19.78" y2="19.78"></line><line x1="1" y1="12" x2="3" y2="12"></line><line x1="21" y1="12" x2="23" y2="12"></line><line x1="4.22" y1="19.78" x2="5.64" y2="18.36"></line><line x1="18.36" y1="5.64" x2="19.78" y2="4.22"></line></svg>`,
+    Edit: `<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"></path><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"></path></svg>`,
+    Check: `<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"></polyline></svg>`
+};
+
+/**
+ * CONSTANTS
+ */
+const STORAGE_KEY = 'studyflow_data_v1';
+const PALETTE = [
+  '#3b82f6', // blue-500
+  '#ef4444', // red-500
+  '#10b981', // emerald-500
+  '#f59e0b', // amber-500
+  '#8b5cf6', // violet-500
+  '#ec4899', // pink-500
+  '#06b6d4', // cyan-500
+  '#f97316', // orange-500
+  '#6366f1', // indigo-500
+  '#84cc16'  // lime-500
+];
+
+const INITIAL_DATA = {
+  categories: [
+    { id: 'cat_1', name: 'General', color: '#3b82f6' },
+    { id: 'cat_2', name: 'Priority', color: '#ef4444' },
+  ],
+  tasks: [
+    { id: 'task_1', categoryId: 'cat_1', name: 'Study' },
+    { id: 'task_2', categoryId: 'cat_2', name: 'Productivity' },
+  ],
+  sessions: [],
+};
+
+class App {
+    constructor() {
+        this.data = this.loadData();
+        this.view = 'dashboard'; // 'dashboard' | 'analytics'
+        this.selectedTaskId = null;
+        this.isDarkMode = false;
+        this.activeSession = this.getActiveSession();
+        this.newTaskCategory = this.data.categories[0].id;
+        this.analyticsMode = 'weekly';
+        
+        this.init();
+    }
+
+    // PERSISTENCE: Loading Data
+    loadData() {
+        const saved = localStorage.getItem(STORAGE_KEY);
+        return saved ? JSON.parse(saved) : INITIAL_DATA;
+    }
+
+    // PERSISTENCE: Saving Data
+    saveData() {
+        localStorage.setItem(STORAGE_KEY, JSON.stringify(this.data));
+    }
+
+    getActiveSession() {
+        // This persists because we save 'endTime: null' to localStorage
+        return this.data.sessions.find(s => s.endTime === null);
+    }
+
+    init() {
+        // Dark Mode Check
+        if (window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches) {
+            this.isDarkMode = true;
+        }
+        this.applyTheme();
+
+        // Start Timer Loop
+        // We use timestamps, so even if you refresh, the math (Now - StartTime) remains correct
+        setInterval(() => {
+            if (this.activeSession) {
+                this.renderActiveTimer(); // Only update timer part
+                if (this.selectedTaskId === this.activeSession.taskId) {
+                     this.renderTaskDetails(); // Update details if viewing active task
+                }
+            }
+        }, 1000);
+
+        // Add Task Form Listener
+        document.getElementById('add-task-form').addEventListener('submit', (e) => {
+            e.preventDefault();
+            this.handleAddTask();
+        });
+
+        this.render();
+    }
+
+    applyTheme() {
+        if (this.isDarkMode) document.documentElement.classList.add('dark');
+        else document.documentElement.classList.remove('dark');
+    }
+
+    toggleTheme() {
+        this.isDarkMode = !this.isDarkMode;
+        this.applyTheme();
+        this.render();
+    }
+
+    // --- ACTIONS ---
+
+    handleStartSession(taskId, categoryId) {
+        if (this.activeSession) {
+            this.handleStopSession();
+        }
+        const now = Date.now();
+        const newSession = {
+            id: `sess_${now}_${Math.random().toString(36).substr(2, 9)}`,
+            taskId,
+            categoryId,
+            startTime: now,
+            endTime: null,
+            durationSeconds: 0,
+            date: new Date(now).setHours(0, 0, 0, 0)
+        };
+        this.data.sessions.push(newSession);
+        this.activeSession = newSession;
+        this.saveData(); // Save to LocalStorage immediately
+        this.render();
+    }
+
+    handleStopSession() {
+        if (!this.activeSession) return;
+        const now = Date.now();
+        this.activeSession.endTime = now;
+        this.activeSession.durationSeconds = Math.floor((now - this.activeSession.startTime) / 1000);
+        
+        // Update in list
+        const idx = this.data.sessions.findIndex(s => s.id === this.activeSession.id);
+        if (idx !== -1) this.data.sessions[idx] = this.activeSession;
+
+        this.activeSession = null;
+        this.saveData(); // Save to LocalStorage immediately
+        this.render();
+    }
+
+    handleAddTask() {
+        const nameInput = document.getElementById('new-task-name');
+        const name = nameInput.value.trim();
+        if (!name) return;
+
+        const newTask = {
+            id: `task_${Date.now()}`,
+            name: name,
+            categoryId: this.newTaskCategory
+        };
+        this.data.tasks.push(newTask);
+        this.saveData(); // Save to LocalStorage immediately
+        
+        nameInput.value = '';
+        this.closeModal();
+        this.render();
+    }
+    
+    handleRenameTask(taskId, newName) {
+        const task = this.data.tasks.find(t => t.id === taskId);
+        if(task) {
+            task.name = newName;
+            this.saveData(); // Save to LocalStorage immediately
+            this.render();
+        }
+    }
+
+    openModal() {
+        document.getElementById('modal-overlay').classList.remove('hidden');
+        this.renderModalCategories();
+    }
+
+    closeModal() {
+        document.getElementById('modal-overlay').classList.add('hidden');
+    }
+
+    setNewTaskCategory(catId) {
+        this.newTaskCategory = catId;
+        this.renderModalCategories();
+    }
+
+    // --- RENDERING ---
+
+    render() {
+        const app = document.getElementById('app');
+        app.innerHTML = `
+            ${this.renderSidebar()}
+            <div class="flex-1 flex flex-col relative bg-white dark:bg-slate-900 overflow-hidden shadow-2xl h-screen">
+                ${this.renderHeader()}
+                ${this.activeSession ? '<div id="active-timer-container"></div>' : ''}
+                <main class="flex-1 overflow-y-auto pb-32 md:pb-8 p-6 md:p-8 no-scrollbar">
+                    ${this.renderContent()}
+                </main>
+                ${this.view === 'dashboard' && !this.selectedTaskId ? this.renderFAB() : ''}
+                ${!this.selectedTaskId ? this.renderMobileNav() : ''}
+            </div>
+        `;
+        
+        // Re-render sub-components if needed
+        if (this.activeSession) this.renderActiveTimer();
+        if ((this.view === 'analytics' || this.selectedTaskId) && !this.selectedTaskId?.isEditing) this.renderChart();
+    }
+
+    renderSidebar() {
+        return `
+            <aside class="hidden md:flex flex-col w-64 bg-white dark:bg-slate-900 border-r border-slate-200 dark:border-slate-800 z-10">
+                <div class="p-6">
+                    <h1 class="text-2xl font-bold bg-gradient-to-r from-blue-600 to-indigo-600 bg-clip-text text-transparent">StudyFlow</h1>
+                    <p class="text-xs text-slate-500 dark:text-slate-400 font-medium mt-1">Professional Tracker</p>
+                </div>
+                <nav class="flex-1 px-4 space-y-2">
+                    <button onclick="window.app.view='dashboard';window.app.selectedTaskId=null;window.app.render()" 
+                        class="w-full flex items-center gap-3 px-4 py-3 rounded-xl transition-all ${this.view === 'dashboard' ? 'bg-indigo-50 dark:bg-indigo-900/20 text-indigo-600 dark:text-indigo-400 font-semibold' : 'text-slate-600 dark:text-slate-400 hover:bg-slate-50 dark:hover:bg-slate-800'}">
+                        ${Icons.Home} <span>Tasks</span>
+                    </button>
+                    <button onclick="window.app.view='analytics';window.app.selectedTaskId=null;window.app.render()" 
+                        class="w-full flex items-center gap-3 px-4 py-3 rounded-xl transition-all ${this.view === 'analytics' ? 'bg-indigo-50 dark:bg-indigo-900/20 text-indigo-600 dark:text-indigo-400 font-semibold' : 'text-slate-600 dark:text-slate-400 hover:bg-slate-50 dark:hover:bg-slate-800'}">
+                        ${Icons.BarChart} <span>Analytics</span>
+                    </button>
+                </nav>
+                <div class="p-4 border-t border-slate-200 dark:border-slate-800">
+                    <button onclick="window.app.toggleTheme()" class="w-full flex items-center justify-center gap-2 px-4 py-2 rounded-lg border border-slate-200 dark:border-slate-700 hover:bg-slate-50 dark:hover:bg-slate-800 text-slate-600 dark:text-slate-300 transition-colors">
+                        ${this.isDarkMode ? Icons.Sun : Icons.Moon}
+                        <span class="text-sm font-medium">${this.isDarkMode ? 'Light Mode' : 'Dark Mode'}</span>
+                    </button>
+                </div>
+            </aside>
+        `;
+    }
+
+    renderHeader() {
+        if (this.selectedTaskId) return ''; // Custom header in details
+        return `
+            <header class="md:hidden px-6 py-6 flex justify-between items-center bg-white dark:bg-slate-900 sticky top-0 z-20 border-b border-slate-100 dark:border-slate-800">
+                <div>
+                    <h1 class="text-xl font-bold bg-gradient-to-r from-blue-600 to-indigo-600 bg-clip-text text-transparent">StudyFlow</h1>
+                    <p class="text-xs text-slate-500 dark:text-slate-400 font-medium">Professional Tracker</p>
+                </div>
+                <button onclick="window.app.toggleTheme()" class="p-2 rounded-full bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300">
+                    ${this.isDarkMode ? Icons.Sun : Icons.Moon}
+                </button>
+            </header>
+            <div class="hidden md:flex justify-between items-center px-8 py-6">
+                 <h2 class="text-2xl font-bold text-slate-800 dark:text-white capitalize">${this.selectedTaskId ? 'Task Details' : (this.view === 'dashboard' ? 'Dashboard' : 'Analytics')}</h2>
+                 <div class="text-sm text-slate-500">${new Date().toLocaleDateString(undefined, { weekday: 'long', month: 'long', day: 'numeric'})}</div>
+            </div>
+        `;
+    }
+
+    renderActiveTimer() {
+        const container = document.getElementById('active-timer-container');
+        if (!container || !this.activeSession) return;
+
+        const task = this.data.tasks.find(t => t.id === this.activeSession.taskId);
+        const category = this.data.categories.find(c => c.id === task?.categoryId);
+        if(!task) return;
+
+        const now = Date.now();
+        // PERSISTENCE MAGIC: This calculates elapsed time based on Start Timestamp.
+        // Even if you reload, 'now' changes but 'startTime' stays same, so result is correct.
+        const elapsed = Math.floor((now - this.activeSession.startTime) / 1000);
+        
+        // Calc today total
+        const startOfToday = new Date().setHours(0,0,0,0);
+        const prev = this.data.sessions.filter(s => s.taskId === task.id && s.id !== this.activeSession.id && s.startTime >= startOfToday)
+                     .reduce((a, b) => a + b.durationSeconds, 0);
+        const total = prev + elapsed;
+
+        container.innerHTML = `
+            <div class="w-full px-6 pt-4 pb-0 md:px-8">
+                <div class="w-full bg-slate-900 dark:bg-slate-800 text-white rounded-2xl shadow-xl p-4 flex items-center justify-between border-l-4 overflow-hidden relative" style="border-left-color: ${category.color}">
+                    <div class="absolute right-0 top-0 w-32 h-32 blur-[60px] opacity-20 pointer-events-none" style="background-color: ${category.color}"></div>
+                    <div class="flex items-center gap-4 relative z-10">
+                        <div class="relative w-10 h-10 flex items-center justify-center shrink-0">
+                            <div class="absolute inset-0 rounded-full border-2 border-white/10"></div>
+                            <div class="absolute inset-0 rounded-full border-2 border-t-transparent border-l-transparent animate-spin" style="border-color: ${category.color} transparent transparent transparent"></div>
+                        </div>
+                        <div>
+                            <div class="font-bold text-lg leading-none flex items-center gap-2">
+                                ${task.name}
+                                <span class="text-[10px] px-1.5 py-0.5 rounded bg-white/10 text-slate-300 font-normal">${category.name}</span>
+                            </div>
+                            <div class="flex items-center gap-3 mt-1">
+                                <div class="text-white text-xl font-mono tabular-nums font-bold tracking-tight">${this.formatTime(elapsed)}</div>
+                                <div class="text-slate-400 text-xs border-l border-slate-700 pl-3">Today: ${this.formatDuration(total)}</div>
+                            </div>
+                        </div>
+                    </div>
+                    <button onclick="window.app.handleStopSession()" class="relative z-10 bg-white/10 hover:bg-white/20 active:bg-white/30 transition-colors w-10 h-10 rounded-full flex items-center justify-center border border-white/10 shrink-0">
+                        ${Icons.Pause}
+                    </button>
+                </div>
+            </div>
+        `;
+    }
+
+    renderContent() {
+        if (this.selectedTaskId) return this.renderTaskDetails();
+        if (this.view === 'dashboard') return this.renderDashboard();
+        return this.renderAnalytics();
+    }
+
+    renderDashboard() {
+        const tasksHtml = this.data.tasks.map(task => {
+            const category = this.data.categories.find(c => c.id === task.categoryId);
+            const isActive = this.activeSession?.taskId === task.id;
+            
+            // Stats
+            const startOfToday = new Date().setHours(0,0,0,0);
+            let todaySec = 0;
+            let totalSec = 0;
+            
+            this.data.sessions.filter(s => s.taskId === task.id).forEach(s => {
+                let dur = s.durationSeconds;
+                if(isActive && s.id === this.activeSession.id) dur = Math.floor((Date.now() - s.startTime)/1000);
+                totalSec += dur;
+                if(s.startTime >= startOfToday) todaySec += dur;
+            });
+
+            return `
+                <div class="relative overflow-hidden group p-5 rounded-2xl transition-all duration-300 bg-white dark:bg-slate-800 border ${isActive ? 'border-blue-500 shadow-lg transform scale-[1.01]' : 'border-slate-200 dark:border-slate-700 shadow-sm'}">
+                    ${isActive ? '<div class="absolute top-0 left-0 w-1.5 h-full bg-blue-500 animate-pulse"></div>' : ''}
+                    <div class="flex justify-between items-start">
+                        <div class="flex-1 cursor-pointer pr-4" onclick="window.app.selectedTaskId='${task.id}';window.app.render()">
+                            <div class="flex items-center gap-2 mb-3">
+                                <span class="px-2.5 py-0.5 rounded-full text-xs font-bold tracking-wide uppercase" style="background-color: ${category.color}15; color: ${category.color}">${category.name}</span>
+                                ${isActive ? `<span class="flex h-2 w-2 relative"><span class="animate-ping absolute inline-flex h-full w-full rounded-full bg-blue-400 opacity-75"></span><span class="relative inline-flex rounded-full h-2 w-2 bg-blue-500"></span></span>` : ''}
+                            </div>
+                            <h3 class="text-xl font-bold text-slate-800 dark:text-slate-100 mb-4 line-clamp-1">${task.name}</h3>
+                            <div class="flex flex-wrap gap-2 text-xs">
+                                <div class="flex items-center gap-1.5 text-slate-700 dark:text-slate-300 bg-slate-100 dark:bg-slate-700/50 px-3 py-1.5 rounded-lg font-medium">
+                                    <span class="text-slate-500 dark:text-slate-400">Today</span>
+                                    <span>${this.formatDuration(todaySec)}</span>
+                                </div>
+                                <div class="flex items-center gap-1.5 text-slate-500 dark:text-slate-400 px-2 py-1.5">
+                                    <span>Total: ${this.formatDuration(totalSec)}</span>
+                                </div>
+                            </div>
+                        </div>
+                        <button onclick="event.stopPropagation(); ${isActive ? 'window.app.handleStopSession()' : `window.app.handleStartSession('${task.id}', '${task.categoryId}')`}" 
+                            class="w-12 h-12 rounded-full flex items-center justify-center transition-all duration-300 shrink-0 ${isActive ? 'bg-red-50 text-red-600 border border-red-200 dark:bg-red-900/20 dark:text-red-400 dark:border-red-900' : 'bg-indigo-600 text-white shadow-lg hover:bg-indigo-700'}">
+                            ${isActive ? Icons.Pause : Icons.Play}
+                        </button>
+                    </div>
+                </div>
+            `;
+        }).join('');
+
+        return `
+            <div class="space-y-4 max-w-7xl mx-auto">
+                <div class="flex justify-between items-center mb-6">
+                    <h2 class="text-2xl font-bold text-slate-800 dark:text-white">Your Tasks</h2>
+                </div>
+                <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+                    ${tasksHtml}
+                </div>
+            </div>
+        `;
+    }
+
+    renderTaskDetails() {
+        const task = this.data.tasks.find(t => t.id === this.selectedTaskId);
+        if(!task) return '';
+        const category = this.data.categories.find(c => c.id === task.categoryId);
+        const isActive = this.activeSession?.taskId === task.id;
+
+        // Calculate History
+        const sessions = this.data.sessions.filter(s => s.taskId === task.id).sort((a,b) => b.startTime - a.startTime);
+        let total = 0;
+        
+        // Group by Day
+        const groups = {};
+        sessions.forEach(s => {
+            let dur = s.durationSeconds;
+            if(isActive && s.id === this.activeSession.id) dur = Math.floor((Date.now() - s.startTime)/1000);
+            total += dur;
+            
+            const d = new Date(s.startTime).setHours(0,0,0,0);
+            if(!groups[d]) groups[d] = 0;
+            groups[d] += dur;
+        });
+        const history = Object.entries(groups).sort((a,b) => b[0] - a[0]);
+
+        return `
+            <div class="slide-in max-w-4xl mx-auto">
+                <div class="flex items-center gap-4 mb-6">
+                    <button onclick="window.app.selectedTaskId=null;window.app.render()" class="p-2 -ml-2 rounded-full hover:bg-slate-100 dark:hover:bg-slate-800 text-slate-600 dark:text-slate-300">
+                        ${Icons.ArrowLeft}
+                    </button>
+                    <div class="flex-1">
+                        ${task.isEditing ? `
+                            <div class="flex items-center gap-2">
+                                <input type="text" id="rename-input" value="${task.name}" class="bg-slate-100 dark:bg-slate-700 text-slate-900 dark:text-white px-3 py-1 rounded-lg text-lg font-bold outline-none w-full">
+                                <button onclick="window.app.handleRenameTask('${task.id}', document.getElementById('rename-input').value); task.isEditing=false;" class="p-2 bg-green-500 text-white rounded-lg">${Icons.Check}</button>
+                            </div>
+                        ` : `
+                            <div class="group flex items-center gap-3">
+                                <h2 class="text-xl font-bold text-slate-800 dark:text-white">${task.name}</h2>
+                                <button onclick="const t = window.app.data.tasks.find(x=>x.id=='${task.id}'); t.isEditing=true; window.app.render()" class="opacity-0 group-hover:opacity-100 p-1.5 text-slate-400 hover:text-indigo-500">${Icons.Edit}</button>
+                            </div>
+                            <span class="text-xs font-semibold mt-1 inline-block" style="color: ${category.color}">${category.name}</span>
+                        `}
+                    </div>
+                </div>
+
+                <div class="bg-white dark:bg-slate-800 p-6 rounded-2xl shadow-sm border border-slate-200 dark:border-slate-700 mb-6 flex justify-between items-center">
+                    <div>
+                        <p class="text-sm text-slate-500 dark:text-slate-400 font-medium">Total Focus Time</p>
+                        <p class="text-3xl font-bold text-slate-800 dark:text-white mt-1">${this.formatDuration(total)}</p>
+                    </div>
+                    <button onclick="${isActive ? 'window.app.handleStopSession()' : `window.app.handleStartSession('${task.id}', '${task.categoryId}')`}" 
+                        class="w-14 h-14 rounded-full flex items-center justify-center shadow-lg transition-transform hover:scale-105 ${isActive ? 'bg-red-500 text-white' : 'bg-indigo-600 text-white'}">
+                        ${isActive ? Icons.Pause : Icons.Play}
+                    </button>
+                </div>
+
+                <div class="bg-white dark:bg-slate-800 p-4 rounded-xl shadow-sm border border-slate-200 dark:border-slate-700 mb-6 h-[300px] relative">
+                    <canvas id="taskChart"></canvas>
+                </div>
+
+                <div class="pb-10">
+                    <h3 class="text-lg font-bold text-slate-800 dark:text-white mb-4">Daily History</h3>
+                    <div class="grid grid-cols-1 md:grid-cols-2 gap-3">
+                        ${history.length ? history.map(([ts, dur]) => {
+                            const isToday = new Date(parseInt(ts)).toDateString() === new Date().toDateString();
+                            return `
+                            <div class="flex justify-between items-center p-4 bg-white dark:bg-slate-800 rounded-xl border border-slate-100 dark:border-slate-700 shadow-sm">
+                                <div>
+                                    <div class="text-sm font-medium ${isToday ? 'text-indigo-600 dark:text-indigo-400' : 'text-slate-800 dark:text-slate-200'}">
+                                        ${isToday ? 'Today' : new Date(parseInt(ts)).toLocaleDateString(undefined, {month:'short', day:'numeric', weekday:'short'})}
+                                    </div>
+                                    ${isToday && isActive ? '<span class="text-[10px] uppercase font-bold text-indigo-500 animate-pulse">Running</span>' : ''}
+                                </div>
+                                <div class="text-sm font-mono font-bold text-slate-700 dark:text-slate-300 bg-slate-50 dark:bg-slate-900 px-3 py-1.5 rounded-lg border border-slate-100 dark:border-slate-700">
+                                    ${this.formatDuration(dur)}
+                                </div>
+                            </div>
+                        `}).join('') : '<div class="text-center text-slate-400 italic">No sessions yet</div>'}
+                    </div>
+                </div>
+            </div>
+        `;
+    }
+
+    renderAnalytics() {
+        return `
+            <div class="flex flex-col gap-6 h-full max-w-7xl mx-auto">
+                <div class="p-4 bg-white dark:bg-slate-800 rounded-xl shadow-sm border border-slate-200 dark:border-slate-700 h-[350px] flex flex-col">
+                    <div class="flex justify-between items-center mb-4">
+                        <h2 class="text-xl font-bold text-slate-800 dark:text-slate-100">Top 5 Tasks</h2>
+                        <div class="flex bg-slate-100 dark:bg-slate-900 rounded-lg p-1">
+                            <button onclick="window.app.analyticsMode='weekly';window.app.render()" class="px-3 py-1.5 rounded-md text-xs font-medium transition-all ${this.analyticsMode === 'weekly' ? 'bg-white dark:bg-slate-700 shadow-sm text-slate-900 dark:text-white' : 'text-slate-500'}">Week</button>
+                            <button onclick="window.app.analyticsMode='monthly';window.app.render()" class="px-3 py-1.5 rounded-md text-xs font-medium transition-all ${this.analyticsMode === 'monthly' ? 'bg-white dark:bg-slate-700 shadow-sm text-slate-900 dark:text-white' : 'text-slate-500'}">Month</button>
+                        </div>
+                    </div>
+                    <div class="relative flex-1 w-full min-h-0">
+                        <canvas id="mainChart"></canvas>
+                    </div>
+                </div>
+                <!-- Breakdown List -->
+                <div class="bg-white dark:bg-slate-800 rounded-xl shadow-sm border border-slate-200 dark:border-slate-700 p-4">
+                     <h3 class="text-lg font-bold text-slate-800 dark:text-white mb-4">Top 3 Task Breakdown</h3>
+                     <div id="analytics-breakdown" class="space-y-3">
+                         <!-- Filled by chart logic -->
+                     </div>
+                </div>
+            </div>
+        `;
+    }
+
+    renderChart() {
+        const ctx = document.getElementById(this.selectedTaskId ? 'taskChart' : 'mainChart')?.getContext('2d');
+        if(!ctx) return;
+
+        // Destroy old chart if exists on this canvas
+        if(window.myChart) window.myChart.destroy();
+
+        const days = this.analyticsMode === 'weekly' ? 7 : 30;
+        const labels = [];
+        
+        // 1. Setup Time Buckets - Calculate EXACT start date (Midnight)
+        const now = new Date();
+        const startOfToday = new Date();
+        startOfToday.setHours(0,0,0,0);
+        
+        // Start date is (days-1) ago
+        const startTs = new Date(startOfToday);
+        startTs.setDate(startTs.getDate() - (days - 1));
+
+        const buckets = {}; // { timestamp: { taskId: duration } }
+        
+        // Generate Buckets from startTs until Today
+        for(let i=0; i<days; i++) {
+            const d = new Date(startTs);
+            d.setDate(d.getDate() + i);
+            
+            // Format Label based on view
+            let label;
+            if (this.analyticsMode === 'weekly') {
+                label = d.toLocaleDateString('en-US', { weekday: 'short' }); // e.g., Mon
+            } else {
+                label = d.toLocaleDateString('en-US', { month: 'short', day: 'numeric' }); // e.g., Oct 24
+            }
+            labels.push(label);
+            buckets[d.getTime()] = {};
+        }
+
+        // 2. Aggregate Data
+        const taskTotals = {}; // { taskId: totalSeconds }
+        
+        this.data.sessions.forEach(s => {
+            // Only count sessions that started ON or AFTER startTs
+            if(s.startTime < startTs.getTime()) return;
+            
+            let dur = s.durationSeconds;
+            if(this.activeSession && s.id === this.activeSession.id) dur = Math.floor((Date.now() - s.startTime)/1000);
+            
+            // Add to total
+            if(!taskTotals[s.taskId]) taskTotals[s.taskId] = 0;
+            taskTotals[s.taskId] += dur;
+
+            // Add to bucket (Normalized to midnight)
+            const dateKey = new Date(s.startTime).setHours(0,0,0,0);
+            if(buckets[dateKey]) {
+                if(!buckets[dateKey][s.taskId]) buckets[dateKey][s.taskId] = 0;
+                buckets[dateKey][s.taskId] += (dur / 3600);
+            }
+        });
+
+        // 3. Determine which tasks to show
+        let tasksToShow = [];
+        let sortedIds = [];
+        
+        if(this.selectedTaskId) {
+            const t = this.data.tasks.find(x => x.id === this.selectedTaskId);
+            if(t) tasksToShow = [t];
+        } else {
+            // Sort by total duration desc
+            sortedIds = Object.keys(taskTotals).sort((a,b) => taskTotals[b] - taskTotals[a]);
+            // Take top 5 for Chart
+            const top5Ids = sortedIds.slice(0, 5);
+            tasksToShow = top5Ids.map(id => this.data.tasks.find(t => t.id === id)).filter(Boolean);
+        }
+
+        // 4. Build Datasets
+        const datasets = tasksToShow.map((task, index) => {
+            // Color logic: Use Palette. 
+            // If selectedTaskId, use category color. If global, use palette based on index in Top 5 list.
+            let color;
+            if(this.selectedTaskId) {
+                 const cat = this.data.categories.find(c => c.id === task.categoryId);
+                 color = cat ? cat.color : PALETTE[0];
+            } else {
+                 color = PALETTE[index % PALETTE.length];
+            }
+    
+            const data = Object.keys(buckets).sort().map(ts => buckets[ts][task.id] || 0);
+            
+            return {
+                label: task.name,
+                data: data,
+                borderColor: color,
+                backgroundColor: color,
+                tension: 0.4,
+                borderWidth: 2,
+                pointRadius: 3
+            };
+        });
+
+        // 5. Render Breakdown (Side Effect - Only for global view)
+        if(!this.selectedTaskId) {
+            const breakdownContainer = document.getElementById('analytics-breakdown');
+            if(breakdownContainer) {
+                // Top 3
+                const top3Ids = sortedIds.slice(0, 3);
+                const maxVal = top3Ids.length ? taskTotals[top3Ids[0]] : 1;
+    
+                breakdownContainer.innerHTML = top3Ids.map((tid, index) => {
+                    const t = this.data.tasks.find(x=>x.id===tid);
+                    if(!t) return '';
+                    const sec = taskTotals[tid];
+                    const pct = (sec/maxVal)*100;
+                    // Use SAME color as chart (based on index in top list)
+                    const color = PALETTE[index % PALETTE.length];
+    
+                    return `
+                        <div class="flex items-center gap-3">
+                            <div class="w-1 rounded-full h-8 flex-shrink-0" style="background-color: ${color}"></div>
+                            <div class="flex-1">
+                                <div class="flex justify-between text-sm mb-1">
+                                    <span class="font-medium text-slate-700 dark:text-slate-200 truncate">${t.name}</span>
+                                    <span class="font-mono text-slate-500 dark:text-slate-400">${this.formatDuration(sec)}</span>
+                                </div>
+                                <div class="w-full bg-slate-100 dark:bg-slate-700 rounded-full h-1.5 overflow-hidden">
+                                    <div class="h-full rounded-full opacity-80" style="width: ${pct}%; background-color: ${color}"></div>
+                                </div>
+                            </div>
+                        </div>
+                    `;
+                }).join('') || '<p class="text-sm text-slate-500 italic">No data for this period.</p>';
+            }
+        }
+
+        window.myChart = new Chart(ctx, {
+            type: 'line',
+            data: { labels, datasets },
+            options: {
+                responsive: true,
+                maintainAspectRatio: false,
+                plugins: {
+                    legend: { labels: { color: this.isDarkMode ? '#cbd5e1' : '#475569' } }
+                },
+                scales: {
+                    y: { 
+                        beginAtZero: true,
+                        grid: { color: this.isDarkMode ? '#334155' : '#e2e8f0' },
+                        ticks: { color: this.isDarkMode ? '#94a3b8' : '#64748b', callback: (v) => v.toFixed(1) + 'h' }
+                    },
+                    x: {
+                        grid: { display: false },
+                        ticks: { color: this.isDarkMode ? '#94a3b8' : '#64748b' }
+                    }
+                }
+            }
+        });
+    }
+
+    // --- HELPERS ---
+
+    renderFAB() {
+        return `
+            <button onclick="window.app.openModal()" 
+                class="fixed bottom-24 right-6 md:bottom-12 md:right-12 w-14 h-14 bg-indigo-600 hover:bg-indigo-700 text-white rounded-full shadow-xl flex items-center justify-center z-10 transition-transform hover:scale-110 active:scale-95">
+                ${Icons.Plus}
+            </button>
+        `;
+    }
+
+    renderMobileNav() {
+        return `
+            <nav class="md:hidden fixed bottom-0 w-full bg-white/80 dark:bg-slate-900/80 backdrop-blur-md border-t border-slate-200 dark:border-slate-800 z-40 pb-safe">
+                <div class="flex justify-around items-center h-16">
+                    <button onclick="window.app.view='dashboard';window.app.render()" class="flex flex-col items-center gap-1 w-full h-full justify-center ${this.view==='dashboard'?'text-indigo-600 dark:text-indigo-400':'text-slate-400'}">
+                        ${Icons.Home} <span class="text-[10px] font-medium">Tasks</span>
+                    </button>
+                    <button onclick="window.app.view='analytics';window.app.render()" class="flex flex-col items-center gap-1 w-full h-full justify-center ${this.view==='analytics'?'text-indigo-600 dark:text-indigo-400':'text-slate-400'}">
+                        ${Icons.BarChart} <span class="text-[10px] font-medium">Analytics</span>
+                    </button>
+                </div>
+            </nav>
+        `;
+    }
+
+    renderModalCategories() {
+        const container = document.getElementById('new-task-categories');
+        container.innerHTML = this.data.categories.map(cat => `
+            <button type="button" onclick="window.app.setNewTaskCategory('${cat.id}')" 
+                class="px-2 py-2 rounded-lg text-sm font-medium border transition-all ${this.newTaskCategory === cat.id ? 'border-transparent text-white ring-2 ring-offset-2 ring-offset-white dark:ring-offset-slate-800' : 'bg-white dark:bg-slate-900 border-slate-200 dark:border-slate-700 text-slate-600'}"
+                style="background-color: ${this.newTaskCategory === cat.id ? cat.color : ''}; border-color: ${this.newTaskCategory === cat.id ? cat.color : ''}">
+                ${cat.name}
+            </button>
+        `).join('');
+    }
+
+    formatTime(sec) {
+        const h = Math.floor(sec / 3600);
+        const m = Math.floor((sec % 3600) / 60);
+        const s = sec % 60;
+        return `${h>0?h+':':''}${m.toString().padStart(2,'0')}:${s.toString().padStart(2,'0')}`;
+    }
+
+    formatDuration(sec) {
+        const h = Math.floor(sec / 3600);
+        const m = Math.floor((sec % 3600) / 60);
+        return `${h}h ${m}m`;
+    }
+}
+
+// Start App
+window.app = new App();
+</script>
+<script type="module" src="/index.tsx"></script>
+</body>
+</html>
